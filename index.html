@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+  <meta charset="UTF-8" />
+  <title>Allrecipes Macro Search</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b1724;
+      color: #f9fafb;
+    }
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.6rem;
+    }
+    .card {
+      background: #152235;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 12px 25px rgba(0,0,0,0.35);
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+    input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #2d3748;
+      background: #0f1724;
+      color: #f9fafb;
+      font-size: 0.9rem;
+    }
+    input::placeholder {
+      color: #4a5568;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .row > div {
+      flex: 1;
+    }
+    .btn {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #e63946, #ff7b72);
+      color: #fff;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn.secondary {
+      background: #2d3748;
+    }
+    .small {
+      font-size: 0.8rem;
+      color: #a0aec0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+    th, td {
+      border-bottom: 1px solid #2d3748;
+      padding: 6px 4px;
+      text-align: right;
+    }
+    th.name-cell, td.name-cell {
+      text-align: left;
+    }
+    th {
+      color: #a0aec0;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #1f2937;
+      color: #f4c95d;
+      font-size: 0.7rem;
+      margin-right: 4px;
+    }
+    .score-good { color: #9ae6b4; }
+    .score-ok { color: #f6e05e; }
+    .score-bad { color: #feb2b2; }
+    @media (max-width: 600px) {
+      .row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Allrecipes Macro Search</h1>
+
+    <!-- Worker base URL -->
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="worker-url">Worker base URL</label>
+          <input type="text" id="worker-url"
+                 placeholder="https://your-worker-subdomain.workers.dev" />
+        </div>
+      </div>
+      <p class="small">
+        Paste the URL of your Cloudflare Worker here (e.g. <code>https://macromatcher.pafischer1989.workers.dev</code>).
+      </p>
+    </div>
+
+    <!-- Targets + single search -->
+    <div class="card">
+      <!-- Single search term -->
+      <div class="row">
+        <div>
+          <label for="search-term">Single recipe search term</label>
+          <input type="text" id="search-term" placeholder="e.g. chicken breast, turkey, lasagna" />
+        </div>
+      </div>
+
+      <!-- Target as percentages -->
+      <div class="row">
+        <div>
+          <label for="target-protein">% Protein</label>
+          <input type="number" id="target-protein" value="30" />
+        </div>
+        <div>
+          <label for="target-carbs">% Carbs</label>
+          <input type="number" id="target-carbs" value="40" />
+        </div>
+        <div>
+          <label for="target-fat">% Fat</label>
+          <input type="number" id="target-fat" value="30" />
+        </div>
+      </div>
+      <p class="small">
+        These are your <strong>desired macro percentages</strong> based on kcal. You can change them before each search.
+      </p>
+
+      <!-- Target as grams (with expressions) -->
+      <hr style="border:none;border-top:1px solid #2d3748;margin:8px 0;">
+      <p class="small"><strong>Optional:</strong> enter target as <em>grams</em> (expressions allowed, e.g. <code>228-68</code>) and convert to % automatically:</p>
+      <div class="row">
+        <div>
+          <label for="target-protein-g">Protein (g)</label>
+          <input type="text" id="target-protein-g" placeholder="e.g. 78 or 200-22" />
+        </div>
+        <div>
+          <label for="target-carbs-g">Carbs (g)</label>
+          <input type="text" id="target-carbs-g" placeholder="e.g. 200 or 228-68" />
+        </div>
+        <div>
+          <label for="target-fat-g">Fat (g)</label>
+          <input type="text" id="target-fat-g" placeholder="e.g. 28" />
+        </div>
+      </div>
+      <button class="btn secondary" id="convert-grams-btn">Use grams as target (%)</button>
+      <p class="small" id="grams-status"></p>
+
+      <!-- Single search button -->
+      <button class="btn" id="search-btn" style="margin-top:12px;">Search &amp; Rank (single recipe)</button>
+      <p class="small" id="status"></p>
+    </div>
+
+    <!-- Combo search (main + side) -->
+    <div class="card">
+      <p class="small"><strong>Combo search:</strong> find best pair of main + side matching your macros.</p>
+      <div class="row">
+        <div>
+          <label for="main-term">Main dish search term</label>
+          <input type="text" id="main-term" placeholder="e.g. chicken" />
+        </div>
+        <div>
+          <label for="side-term">Side dish search term</label>
+          <input type="text" id="side-term" placeholder="e.g. rice" />
+        </div>
+      </div>
+      <button class="btn" id="combo-btn">Search combo (main + side)</button>
+      <p class="small" id="combo-status"></p>
+    </div>
+
+    <!-- Results -->
+    <div class="card">
+      <h3 style="margin-top:0;font-size:1rem;">Single recipe results</h3>
+      <div id="results"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;font-size:1rem;">Main + side combinations</h3>
+      <div id="combo-results"></div>
+    </div>
+  </div>
+
+  <script>
+    const workerUrlInput = document.getElementById("worker-url");
+
+    const searchTermInput = document.getElementById("search-term");
+    const mainTermInput = document.getElementById("main-term");
+    const sideTermInput = document.getElementById("side-term");
+
+    const targetProteinInput = document.getElementById("target-protein");
+    const targetCarbsInput = document.getElementById("target-carbs");
+    const targetFatInput = document.getElementById("target-fat");
+
+    const targetProteinGInput = document.getElementById("target-protein-g");
+    const targetCarbsGInput = document.getElementById("target-carbs-g");
+    const targetFatGInput = document.getElementById("target-fat-g");
+
+    const convertGramsBtn = document.getElementById("convert-grams-btn");
+    const gramsStatusEl = document.getElementById("grams-status");
+
+    const searchBtn = document.getElementById("search-btn");
+    const comboBtn = document.getElementById("combo-btn");
+
+    const statusEl = document.getElementById("status");
+    const comboStatusEl = document.getElementById("combo-status");
+
+    const resultsEl = document.getElementById("results");
+    const comboResultsEl = document.getElementById("combo-results");
+
+    // --- settings persistence ---
+    function loadSettings() {
+      try {
+        const s = JSON.parse(localStorage.getItem("macroSearchSettings") || "{}");
+        if (s.workerUrl) workerUrlInput.value = s.workerUrl;
+        if (typeof s.p === "number") targetProteinInput.value = s.p;
+        if (typeof s.c === "number") targetCarbsInput.value = s.c;
+        if (typeof s.f === "number") targetFatInput.value = s.f;
+      } catch (e) {}
+    }
+
+    function saveSettings() {
+      const settings = {
+        workerUrl: workerUrlInput.value.trim(),
+        p: parseFloat(targetProteinInput.value) || 0,
+        c: parseFloat(targetCarbsInput.value) || 0,
+        f: parseFloat(targetFatInput.value) || 0,
+      };
+      localStorage.setItem("macroSearchSettings", JSON.stringify(settings));
+    }
+
+    loadSettings();
+    workerUrlInput.addEventListener("change", saveSettings);
+    targetProteinInput.addEventListener("change", saveSettings);
+    targetCarbsInput.addEventListener("change", saveSettings);
+    targetFatInput.addEventListener("change", saveSettings);
+
+    function classifyScore(score) {
+      if (score <= 10) return "good";
+      if (score <= 20) return "ok";
+      return "bad";
+    }
+
+    // --- tiny expression parser for grams (supports + - * / . and parentheses) ---
+function evalExpression(expr) {
+  if (!expr) return NaN;
+
+  // Allow digits, decimal point, + - * / and parentheses, strip everything else
+  const sanitized = String(expr).replace(/[^0-9.+\-*/()]/g, "");
+  if (!sanitized.trim()) return NaN;
+
+  try {
+    // Evaluate as a math expression
+    const fn = new Function('"use strict"; return (' + sanitized + ');');
+    const val = fn();
+    return typeof val === "number" && isFinite(val) ? val : NaN;
+  } catch (e) {
+    return NaN;
+  }
+}
+
+    // Convert grams -> % based on kcal (4/4/9) and set target % fields
+    convertGramsBtn.addEventListener("click", () => {
+      const gP = evalExpression(targetProteinGInput.value);
+      const gC = evalExpression(targetCarbsGInput.value);
+      const gF = evalExpression(targetFatGInput.value);
+
+      if (!isFinite(gP) || !isFinite(gC) || !isFinite(gF)) {
+        gramsStatusEl.textContent = "Could not parse one or more gram values. Use numbers and + - * / only.";
+        return;
+      }
+      if (gP < 0 || gC < 0 || gF < 0) {
+        gramsStatusEl.textContent = "Gram values should not be negative.";
+        return;
+      }
+
+      const kcalP = gP * 4;
+      const kcalC = gC * 4;
+      const kcalF = gF * 9;
+      const totalKcal = kcalP + kcalC + kcalF;
+
+      if (!totalKcal) {
+        gramsStatusEl.textContent = "Total kcal is zero; please enter non-zero grams.";
+        return;
+      }
+
+      const pctP = (kcalP / totalKcal) * 100;
+      const pctC = (kcalC / totalKcal) * 100;
+      const pctF = (kcalF / totalKcal) * 100;
+
+      targetProteinInput.value = pctP.toFixed(1);
+      targetCarbsInput.value = pctC.toFixed(1);
+      targetFatInput.value = pctF.toFixed(1);
+
+      gramsStatusEl.textContent =
+        `Using ${gP.toFixed(1)} g P, ${gC.toFixed(1)} g C, ${gF.toFixed(1)} g F ` +
+        `→ ${pctP.toFixed(1)}% / ${pctC.toFixed(1)}% / ${pctF.toFixed(1)}% (kcal-based).`;
+
+      saveSettings();
+    });
+
+    // helper: enrich a raw recipe object with kcal + % macros
+    function enrichRecipe(r) {
+      const protein_g = r.protein_g || 0;
+      const carbs_g = r.carbs_g || 0;
+      const fat_g = r.fat_g || 0;
+
+      const kcalP = protein_g * 4;
+      const kcalC = carbs_g * 4;
+      const kcalF = fat_g * 9;
+      const totalKcal = r.calories || (kcalP + kcalC + kcalF);
+      if (!totalKcal) return null;
+
+      const pctP = (kcalP / totalKcal) * 100;
+      const pctC = (kcalC / totalKcal) * 100;
+      const pctF = (kcalF / totalKcal) * 100;
+
+      return {
+        ...r,
+        protein_g,
+        carbs_g,
+        fat_g,
+        totalKcal,
+        pctP,
+        pctC,
+        pctF,
+      };
+    }
+
+    async function fetchRecipes(workerBase, term, limit = 10) {
+      const url = `${workerBase.replace(/\/+$/, "")}/api/search?q=${encodeURIComponent(term)}&limit=${limit}`;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        throw new Error(`Worker error: ${resp.status}`);
+      }
+      const data = await resp.json();
+      if (!data.recipes || !data.recipes.length) return [];
+      return data.recipes.map(enrichRecipe).filter(Boolean);
+    }
+
+    // --- single search & rank ---
+    searchBtn.addEventListener("click", async () => {
+      const workerBase = workerUrlInput.value.trim();
+      const term = searchTermInput.value.trim();
+
+      if (!workerBase) {
+        alert("Please enter your Worker base URL.");
+        return;
+      }
+      if (!term) {
+        alert("Please enter a search term.");
+        return;
+      }
+
+      saveSettings();
+      statusEl.textContent = "Searching and fetching nutrition…";
+      resultsEl.innerHTML = "";
+
+      const targetP = parseFloat(targetProteinInput.value) || 0;
+      const targetC = parseFloat(targetCarbsInput.value) || 0;
+      const targetF = parseFloat(targetFatInput.value) || 0;
+
+      try {
+        const recipes = await fetchRecipes(workerBase, term, 10);
+
+        if (!recipes.length) {
+          statusEl.textContent = "No recipes found with nutrition data.";
+          return;
+        }
+
+        recipes.forEach((r) => {
+          const dP = r.pctP - targetP;
+          const dC = r.pctC - targetC;
+          const dF = r.pctF - targetF;
+          r.distance = Math.sqrt(dP*dP + dC*dC + dF*dF);
+        });
+
+        recipes.sort((a, b) => a.distance - b.distance);
+
+        statusEl.textContent = `Found ${recipes.length} recipes. Showing best matches.`;
+
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th class="name-cell">Recipe</th>
+                <th>kcal</th>
+                <th>P %</th>
+                <th>C %</th>
+                <th>F %</th>
+                <th>Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        recipes.forEach((r, i) => {
+          const cls = classifyScore(r.distance);
+          const clsName = cls === "good" ? "score-good" : cls === "ok" ? "score-ok" : "score-bad";
+
+          html += `
+            <tr>
+              <td class="name-cell">
+                ${i === 0 ? `<span class="chip">Best match</span>` : ""}
+                <a href="${r.url}" target="_blank" rel="noopener noreferrer" style="color:#f4c95d; text-decoration:none;">
+                  ${r.title}
+                </a>
+              </td>
+              <td>${r.totalKcal.toFixed(0)}</td>
+              <td>${r.pctP.toFixed(1)}</td>
+              <td>${r.pctC.toFixed(1)}</td>
+              <td>${r.pctF.toFixed(1)}</td>
+              <td class="${clsName}">${r.distance.toFixed(1)}</td>
+            </tr>
+          `;
+        });
+
+        html += `</tbody></table>`;
+        resultsEl.innerHTML = html;
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Error during search. See console for details.";
+      }
+    });
+
+    // --- combo search: main + side ---
+    comboBtn.addEventListener("click", async () => {
+      const workerBase = workerUrlInput.value.trim();
+      const mainTerm = mainTermInput.value.trim();
+      const sideTerm = sideTermInput.value.trim();
+
+      if (!workerBase) {
+        alert("Please enter your Worker base URL.");
+        return;
+      }
+      if (!mainTerm || !sideTerm) {
+        alert("Please enter both main and side search terms.");
+        return;
+      }
+
+      const targetP = parseFloat(targetProteinInput.value) || 0;
+      const targetC = parseFloat(targetCarbsInput.value) || 0;
+      const targetF = parseFloat(targetFatInput.value) || 0;
+
+      comboStatusEl.textContent = "Searching combinations…";
+      comboResultsEl.innerHTML = "";
+
+      try {
+        const [mainRecipes, sideRecipes] = await Promise.all([
+          fetchRecipes(workerBase, mainTerm, 8),
+          fetchRecipes(workerBase, sideTerm, 8),
+        ]);
+
+        if (!mainRecipes.length || !sideRecipes.length) {
+          comboStatusEl.textContent = "Not enough recipes found for main or side.";
+          return;
+        }
+
+        const combos = [];
+
+        for (const m of mainRecipes) {
+          for (const s of sideRecipes) {
+            const protein_g = m.protein_g + s.protein_g;
+            const carbs_g  = m.carbs_g  + s.carbs_g;
+            const fat_g    = m.fat_g    + s.fat_g;
+
+            const kcalP = protein_g * 4;
+            const kcalC = carbs_g * 4;
+            const kcalF = fat_g * 9;
+            const totalKcal = kcalP + kcalC + kcalF;
+            if (!totalKcal) continue;
+
+            const pctP = (kcalP / totalKcal) * 100;
+            const pctC = (kcalC / totalKcal) * 100;
+            const pctF = (kcalF / totalKcal) * 100;
+
+            const dP = pctP - targetP;
+            const dC = pctC - targetC;
+            const dF = pctF - targetF;
+            const distance = Math.sqrt(dP*dP + dC*dC + dF*dF);
+
+            combos.push({
+              main: m,
+              side: s,
+              protein_g,
+              carbs_g,
+              fat_g,
+              totalKcal,
+              pctP,
+              pctC,
+              pctF,
+              distance,
+            });
+          }
+        }
+
+        if (!combos.length) {
+          comboStatusEl.textContent = "No valid combinations (missing macros).";
+          return;
+        }
+
+        combos.sort((a, b) => a.distance - b.distance);
+        const topCombos = combos.slice(0, 15);
+
+        comboStatusEl.textContent =
+          `Found ${combos.length} combinations. Showing top ${topCombos.length}.`;
+
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th class="name-cell">Main + Side</th>
+                <th>kcal</th>
+                <th>P %</th>
+                <th>C %</th>
+                <th>F %</th>
+                <th>Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        topCombos.forEach((c, i) => {
+          const cls = classifyScore(c.distance);
+          const clsName = cls === "good" ? "score-good" : cls === "ok" ? "score-ok" : "score-bad";
+
+          html += `
+            <tr>
+              <td class="name-cell">
+                ${i === 0 ? `<span class="chip">Best combo</span>` : ""}
+                <div>
+                  <a href="${c.main.url}" target="_blank" rel="noopener noreferrer" style="color:#f4c95d; text-decoration:none;">
+                    Main: ${c.main.title}
+                  </a><br>
+                  <a href="${c.side.url}" target="_blank" rel="noopener noreferrer" style="color:#9ae6b4; text-decoration:none;">
+                    Side: ${c.side.title}
+                  </a>
+                </div>
+              </td>
+              <td>${c.totalKcal.toFixed(0)}</td>
+              <td>${c.pctP.toFixed(1)}</td>
+              <td>${c.pctC.toFixed(1)}</td>
+              <td>${c.pctF.toFixed(1)}</td>
+              <td class="${clsName}">${c.distance.toFixed(1)}</td>
+            </tr>
+          `;
+        });
+
+        html += `</tbody></table>`;
+        comboResultsEl.innerHTML = html;
+      } catch (e) {
+        console.error(e);
+        comboStatusEl.textContent = "Error during combo search. See console for details.";
+      }
+    });
+  </script>
+</body>
+</html>
