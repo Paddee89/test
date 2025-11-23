@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" href="icon.png">
-<link rel="apple-touch-icon" href="icon.png">
-<link rel="manifest" href="manifest.json">
   <meta charset="UTF-8" />
-  <title>Allrecipes Macro Search</title>
+  <title>MacroMatcher – Recipe Macro Search</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Optional: put your icon file in the same folder and name it icon.png -->
+  <link rel="icon" href="icon.png" />
+
   <style>
     body {
       margin: 0;
@@ -35,7 +35,7 @@
       font-size: 0.85rem;
       margin-bottom: 4px;
     }
-    input[type="number"], input[type="text"] {
+    input[type="number"], input[type="text"], select {
       width: 100%;
       padding: 6px 8px;
       border-radius: 8px;
@@ -46,6 +46,9 @@
     }
     input::placeholder {
       color: #4a5568;
+    }
+    select {
+      cursor: pointer;
     }
     .row {
       display: flex;
@@ -111,7 +114,7 @@
 </head>
 <body>
   <div class="app">
-    <h1>Allrecipes Macro Search</h1>
+    <h1>MacroMatcher – Recipe Macro Search</h1>
 
     <!-- Worker base URL -->
     <div class="card">
@@ -122,8 +125,17 @@
                  placeholder="https://your-worker-subdomain.workers.dev" />
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label for="site-select">Recipe website</label>
+          <select id="site-select">
+            <option value="allrecipes">Allrecipes (US)</option>
+            <option value="eatsmarter">EatSmarter (DE)</option>
+          </select>
+        </div>
+      </div>
       <p class="small">
-        Paste the URL of your Cloudflare Worker here (e.g. <code>https://macromatcher.pafischer1989.workers.dev</code>).
+        Paste your Cloudflare Worker base URL (e.g. <code>https://macromatcher.pafischer1989.workers.dev</code>) and choose the site.
       </p>
     </div>
 
@@ -158,7 +170,9 @@
 
       <!-- Target as grams (with expressions) -->
       <hr style="border:none;border-top:1px solid #2d3748;margin:8px 0;">
-      <p class="small"><strong>Optional:</strong> enter target as <em>grams</em> (expressions allowed, e.g. <code>228-68</code>) and convert to % automatically:</p>
+      <p class="small">
+        <strong>Optional:</strong> enter target as <em>grams</em> (expressions allowed, e.g. <code>228-68</code>) and convert to % automatically:
+      </p>
       <div class="row">
         <div>
           <label for="target-protein-g">Protein (g)</label>
@@ -212,6 +226,7 @@
 
   <script>
     const workerUrlInput = document.getElementById("worker-url");
+    const siteSelect = document.getElementById("site-select");
 
     const searchTermInput = document.getElementById("search-term");
     const mainTermInput = document.getElementById("main-term");
@@ -245,6 +260,7 @@
         if (typeof s.p === "number") targetProteinInput.value = s.p;
         if (typeof s.c === "number") targetCarbsInput.value = s.c;
         if (typeof s.f === "number") targetFatInput.value = s.f;
+        if (s.site) siteSelect.value = s.site;
       } catch (e) {}
     }
 
@@ -254,6 +270,7 @@
         p: parseFloat(targetProteinInput.value) || 0,
         c: parseFloat(targetCarbsInput.value) || 0,
         f: parseFloat(targetFatInput.value) || 0,
+        site: siteSelect.value || "allrecipes",
       };
       localStorage.setItem("macroSearchSettings", JSON.stringify(settings));
     }
@@ -263,6 +280,7 @@
     targetProteinInput.addEventListener("change", saveSettings);
     targetCarbsInput.addEventListener("change", saveSettings);
     targetFatInput.addEventListener("change", saveSettings);
+    siteSelect.addEventListener("change", saveSettings);
 
     function classifyScore(score) {
       if (score <= 10) return "good";
@@ -271,22 +289,21 @@
     }
 
     // --- tiny expression parser for grams (supports + - * / . and parentheses) ---
-function evalExpression(expr) {
-  if (!expr) return NaN;
+    function evalExpression(expr) {
+      if (!expr) return NaN;
 
-  // Allow digits, decimal point, + - * / and parentheses, strip everything else
-  const sanitized = String(expr).replace(/[^0-9.+\-*/()]/g, "");
-  if (!sanitized.trim()) return NaN;
+      // Allow digits, decimal point, + - * / and parentheses, strip everything else
+      const sanitized = String(expr).replace(/[^0-9.+\-*/()]/g, "");
+      if (!sanitized.trim()) return NaN;
 
-  try {
-    // Evaluate as a math expression
-    const fn = new Function('"use strict"; return (' + sanitized + ');');
-    const val = fn();
-    return typeof val === "number" && isFinite(val) ? val : NaN;
-  } catch (e) {
-    return NaN;
-  }
-}
+      try {
+        const fn = new Function('"use strict"; return (' + sanitized + ');');
+        const val = fn();
+        return typeof val === "number" && isFinite(val) ? val : NaN;
+      } catch (e) {
+        return NaN;
+      }
+    }
 
     // Convert grams -> % based on kcal (4/4/9) and set target % fields
     convertGramsBtn.addEventListener("click", () => {
@@ -356,8 +373,13 @@ function evalExpression(expr) {
       };
     }
 
-    async function fetchRecipes(workerBase, term, limit = 10) {
-      const url = `${workerBase.replace(/\/+$/, "")}/api/search?q=${encodeURIComponent(term)}&limit=${limit}`;
+    async function fetchRecipes(workerBase, term, limit = 10, site = "allrecipes") {
+      const url =
+        `${workerBase.replace(/\/+$/, "")}/api/search` +
+        `?q=${encodeURIComponent(term)}` +
+        `&limit=${limit}` +
+        `&site=${encodeURIComponent(site)}`;
+
       const resp = await fetch(url);
       if (!resp.ok) {
         throw new Error(`Worker error: ${resp.status}`);
@@ -371,6 +393,7 @@ function evalExpression(expr) {
     searchBtn.addEventListener("click", async () => {
       const workerBase = workerUrlInput.value.trim();
       const term = searchTermInput.value.trim();
+      const site = siteSelect.value || "allrecipes";
 
       if (!workerBase) {
         alert("Please enter your Worker base URL.");
@@ -390,7 +413,7 @@ function evalExpression(expr) {
       const targetF = parseFloat(targetFatInput.value) || 0;
 
       try {
-        const recipes = await fetchRecipes(workerBase, term, 10);
+        const recipes = await fetchRecipes(workerBase, term, 10, site);
 
         if (!recipes.length) {
           statusEl.textContent = "No recipes found with nutrition data.";
@@ -457,6 +480,7 @@ function evalExpression(expr) {
       const workerBase = workerUrlInput.value.trim();
       const mainTerm = mainTermInput.value.trim();
       const sideTerm = sideTermInput.value.trim();
+      const site = siteSelect.value || "allrecipes";
 
       if (!workerBase) {
         alert("Please enter your Worker base URL.");
@@ -476,8 +500,8 @@ function evalExpression(expr) {
 
       try {
         const [mainRecipes, sideRecipes] = await Promise.all([
-          fetchRecipes(workerBase, mainTerm, 8),
-          fetchRecipes(workerBase, sideTerm, 8),
+          fetchRecipes(workerBase, mainTerm, 8, site),
+          fetchRecipes(workerBase, sideTerm, 8, site),
         ]);
 
         if (!mainRecipes.length || !sideRecipes.length) {
